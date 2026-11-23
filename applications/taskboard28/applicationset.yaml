@@ -1,0 +1,83 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: taskboard28-dev
+  namespace: argocd
+spec:
+  generators:
+  - list:
+      elements: []
+  template:
+    metadata:
+      name: '{{name}}-dev'
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/ika100-demo/taskboard28-gitops
+        targetRevision: main
+        path: applications/taskboard28/overlays/dev/{{name}}
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: taskboard28-dev
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+        - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: taskboard28-staging
+  namespace: argocd
+spec:
+  generators:
+  - list:
+      elements: []
+  template:
+    metadata:
+      name: '{{name}}-staging'
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/ika100-demo/taskboard28-gitops
+        targetRevision: main
+        path: applications/taskboard28/overlays/staging/{{name}}
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: taskboard28-staging
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+        - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: taskboard28-prod
+  namespace: argocd
+spec:
+  generators:
+  - list:
+      elements: []
+  template:
+    metadata:
+      name: '{{name}}-prod'
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/ika100-demo/taskboard28-gitops
+        targetRevision: main
+        path: applications/taskboard28/overlays/prod/{{name}}
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: taskboard28-prod
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+        - CreateNamespace=true
