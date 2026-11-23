@@ -1,0 +1,25 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: taskboard28-postgres-backups
+  labels:
+    app.kubernetes.io/name: postgres-backups
+    app.kubernetes.io/part-of: taskboard28
+    app.kubernetes.io/managed-by: gitops-app
+  annotations:
+    argocd.argoproj.io/sync-options: Delete=false
+spec:
+  name: taskboard28-postgres-backups
+  clusterRef:
+    name: taskboard28-postgres-backups
+  reclaimPolicy: Retain
+  versioning: Suspended
+  owner: taskboard28-postgres-backups
+  access:
+  - user: taskboard28-postgres-backups
+    actions:
+    - Read
+    - Write
+    - List
+    - Tagging
+  adoptExisting: true
