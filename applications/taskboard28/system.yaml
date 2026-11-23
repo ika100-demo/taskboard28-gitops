@@ -28,6 +28,7 @@ environments:
       ui: lgtm
   prod:
     policy: "off"
+    host: '{component}.{system}.localhost'
     # host: "{component}.example.com"
 # components: add with `/component:new`; each runs in the environments listed under its `instances`.
 components:
