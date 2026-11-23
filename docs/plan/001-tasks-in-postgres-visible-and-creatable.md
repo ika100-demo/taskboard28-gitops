@@ -3,69 +3,122 @@ plan_id: 001-tasks-in-postgres-visible-and-creatable
 spec: 001-tasks-in-postgres-visible-and-creatable
 feature: Tasks kept in Postgres, listed and created on the taskboard28 website
 gitops_app: ika100-demo/taskboard28-gitops
-status: draft
+status: completed
 repos:
-  - id: taskboard28-gitops
-    shape: gitops-app
-    summary: Postgres database for taskboard28, used by taskboard28-api; website wired to the API
-    acs: [AC-001.1, AC-001.2, AC-001.8]
-    order: before-merge
-    gitops:
-      - {resource: postgres}
-      - {uses: postgres, component: taskboard28-api}
-      - {env: {TASKBOARD28_API_URL: 'http://taskboard28-api'}, component: taskboard28-web}
-    arguments: |
-      dev only (spec non-goal: no staging/prod). One Postgres for the system, used only by taskboard28-api (A1);
-      `uses` injects DATABASE_URL and PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD into the API. taskboard28-api
-      keeps its own exposure (A9); no replicas change (single instance, non-goal).
-    depends_on: []
-    done: false
-  - id: taskboard28-api
-    shape: service-python
-    summary: Keep tasks in Postgres so they survive restarts
-    acs: [AC-001.1, AC-001.2, AC-001.3, AC-001.4, AC-001.5, AC-001.6, AC-001.8]
-    criteria:
-      - "Given an empty Postgres database at DATABASE_URL, when the service starts, then `/ready` answers `200` and `POST /tasks` with `{\"title\": \"Buy milk\"}` answers `201`, without any manual schema step (system AC-001.1)"
-      - "Given tasks created through `POST /tasks`, when the service is restarted or redeployed against the same database, then `GET /tasks` returns `200` with the same tasks (same `id`, `title`, `due_date` and `created_at`) in creation order (system AC-001.1) (replaces AC-001.7)"
-      - "Given tasks \"A\" with `due_date` `2026-12-24` and then \"B\" without `due_date` created through `POST /tasks`, when a client sends `GET /tasks`, then the response is `200` with \"A\" (`due_date` `\"2026-12-24\"`) followed by \"B\" (`due_date` `null`), the last one being the task returned by the latest `201` (system AC-001.2, AC-001.4)"
-      - "Given no task is stored in the database, when a client sends `GET /tasks`, then the response is `200` with an empty JSON array `[]` (system AC-001.3) (replaces AC-001.6)"
-      - "Given a `POST /tasks` whose `title` is missing, not a string, empty or whitespace-only, or longer than 200 characters after trimming, when it is sent, then the response is `422` with a `detail` item whose `loc` ends in `title`, and no task is stored (system AC-001.5)"
-      - "Given 1000 tasks are stored in the database (also after a restart), when a client sends a valid `POST /tasks`, then the response is `409` with `{\"detail\": \"task limit of 1000 reached\"}` and `GET /tasks` still returns exactly 1000 tasks (system AC-001.6)"
-      - "Given the database is unreachable or does not answer within 5 seconds, when a client sends `GET /tasks` or `POST /tasks`, then the response is `503` with `{\"detail\": \"task store unavailable\"}`, no task is stored, `/ready` answers `503` and `/health` still answers `200` (system AC-001.8)"
-      - "Given the database became reachable again after an outage, when a client sends `GET /tasks` without the service being restarted, then the response is `200` with all tasks stored before the outage and `/ready` answers `200` (system AC-001.8)"
-    arguments: |
-      Config only from env: DATABASE_URL (and PG*) injected by the gitops `uses: postgres`. The schema is created or
-      migrated by the service itself at start. Endpoints, fields, validation and the 409 limit are unchanged from the
-      repo's spec 001 (system A2); only storage changes. Tests run against a real Postgres (e.g. testcontainers).
-    depends_on: []
-    done: false
-  - id: taskboard28-web
-    shape: web-nextjs
-    summary: Start page that lists tasks and creates them through taskboard28-api
-    acs: [AC-001.1, AC-001.2, AC-001.3, AC-001.4, AC-001.5, AC-001.6, AC-001.7]
-    criteria:
-      - "Given `GET /tasks` on taskboard28-api returns \"A\" (`due_date` `2026-12-24`) followed by \"B\" (`due_date` `null`), when a person opens the start page, then it shows a task list with \"A\" followed by \"B\", each with its title and its due date as `2026-12-24` or the text \"No due date\" (system AC-001.1, AC-001.2)"
-      - "Given `GET /tasks` returns `[]`, when a person opens the start page, then it shows the text \"No tasks yet\" instead of a list, together with the create form (system AC-001.3)"
-      - "Given the start page, when a person enters the title \"Buy milk\", picks 2026-12-24 in the date input (or leaves it empty) and submits, then the site sends `POST /tasks` with `{\"title\": \"Buy milk\", \"due_date\": \"2026-12-24\"}` (or `\"due_date\": null`) and, on `201`, without leaving the page shows the task last in the list with that title and due date (or \"No due date\") and clears the form (system AC-001.4)"
-      - "Given the create form, when a person submits an empty or whitespace-only title, or a title longer than 200 characters after trimming, then it shows \"Title is required\" or \"Title must be at most 200 characters\" next to the title field, keeps the entered values and sends no `POST /tasks` (system AC-001.5)"
-      - "Given the API answers `POST /tasks` with `422` and a `detail` item whose `loc` ends in `title`, when the answer arrives, then the form shows that item's `msg` next to the title field and keeps the entered values (system AC-001.5)"
-      - "Given the API answers `POST /tasks` with `409`, when the answer arrives, then the form shows \"The task limit of 1000 is reached\", keeps the entered values and the list is unchanged (system AC-001.6)"
-      - "Given taskboard28-api is unreachable, does not answer within 10 seconds, or answers `GET /tasks` with anything but `200` and a JSON array, when a person opens the start page, then it shows \"Tasks could not be loaded. Try again later.\" instead of the list (system AC-001.7)"
-      - "Given taskboard28-api is unreachable, does not answer within 10 seconds, or answers `POST /tasks` with any status other than `201`, `409` or `422` (such as `503`), when a person submits a valid task, then the form shows \"The task could not be saved. Try again.\" and keeps the entered values (system AC-001.7)"
-    arguments: |
-      The site calls the API from the server side only (Server Component / Server Action), base URL from the env var
-      TASKBOARD28_API_URL (set by the gitops entry; no NEXT_PUBLIC_ variable). No sign-in (system A10).
-    depends_on: []
-    done: false
+- id: taskboard28-gitops
+  shape: gitops-app
+  summary: Postgres database for taskboard28, used by taskboard28-api; website wired to the API
+  acs:
+  - AC-001.1
+  - AC-001.2
+  - AC-001.8
+  order: before-merge
+  gitops:
+  - resource: postgres
+  - uses: postgres
+    component: taskboard28-api
+  - env:
+      TASKBOARD28_API_URL: http://taskboard28-api
+    component: taskboard28-web
+  arguments: |
+    dev only (spec non-goal: no staging/prod). One Postgres for the system, used only by taskboard28-api (A1);
+    `uses` injects DATABASE_URL and PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD into the API. taskboard28-api
+    keeps its own exposure (A9); no replicas change (single instance, non-goal).
+  depends_on: []
+  done: true
+- id: taskboard28-api
+  shape: service-python
+  summary: Keep tasks in Postgres so they survive restarts
+  acs:
+  - AC-001.1
+  - AC-001.2
+  - AC-001.3
+  - AC-001.4
+  - AC-001.5
+  - AC-001.6
+  - AC-001.8
+  criteria:
+  - 'Given an empty Postgres database at DATABASE_URL, when the service starts, then `/ready` answers
+    `200` and `POST /tasks` with `{"title": "Buy milk"}` answers `201`, without any manual schema step
+    (system AC-001.1)'
+  - Given tasks created through `POST /tasks`, when the service is restarted or redeployed against the
+    same database, then `GET /tasks` returns `200` with the same tasks (same `id`, `title`, `due_date`
+    and `created_at`) in creation order (system AC-001.1) (replaces AC-001.7)
+  - Given tasks "A" with `due_date` `2026-12-24` and then "B" without `due_date` created through `POST
+    /tasks`, when a client sends `GET /tasks`, then the response is `200` with "A" (`due_date` `"2026-12-24"`)
+    followed by "B" (`due_date` `null`), the last one being the task returned by the latest `201` (system
+    AC-001.2, AC-001.4)
+  - Given no task is stored in the database, when a client sends `GET /tasks`, then the response is `200`
+    with an empty JSON array `[]` (system AC-001.3) (replaces AC-001.6)
+  - Given a `POST /tasks` whose `title` is missing, not a string, empty or whitespace-only, or longer
+    than 200 characters after trimming, when it is sent, then the response is `422` with a `detail` item
+    whose `loc` ends in `title`, and no task is stored (system AC-001.5)
+  - 'Given 1000 tasks are stored in the database (also after a restart), when a client sends a valid `POST
+    /tasks`, then the response is `409` with `{"detail": "task limit of 1000 reached"}` and `GET /tasks`
+    still returns exactly 1000 tasks (system AC-001.6)'
+  - 'Given the database is unreachable or does not answer within 5 seconds, when a client sends `GET /tasks`
+    or `POST /tasks`, then the response is `503` with `{"detail": "task store unavailable"}`, no task
+    is stored, `/ready` answers `503` and `/health` still answers `200` (system AC-001.8)'
+  - Given the database became reachable again after an outage, when a client sends `GET /tasks` without
+    the service being restarted, then the response is `200` with all tasks stored before the outage and
+    `/ready` answers `200` (system AC-001.8)
+  arguments: |
+    Config only from env: DATABASE_URL (and PG*) injected by the gitops `uses: postgres`. The schema is created or
+    migrated by the service itself at start. Endpoints, fields, validation and the 409 limit are unchanged from the
+    repo's spec 001 (system A2); only storage changes. Tests run against a real Postgres (e.g. testcontainers).
+  depends_on: []
+  done: true
+- id: taskboard28-web
+  shape: web-nextjs
+  summary: Start page that lists tasks and creates them through taskboard28-api
+  acs:
+  - AC-001.1
+  - AC-001.2
+  - AC-001.3
+  - AC-001.4
+  - AC-001.5
+  - AC-001.6
+  - AC-001.7
+  criteria:
+  - Given `GET /tasks` on taskboard28-api returns "A" (`due_date` `2026-12-24`) followed by "B" (`due_date`
+    `null`), when a person opens the start page, then it shows a task list with "A" followed by "B", each
+    with its title and its due date as `2026-12-24` or the text "No due date" (system AC-001.1, AC-001.2)
+  - Given `GET /tasks` returns `[]`, when a person opens the start page, then it shows the text "No tasks
+    yet" instead of a list, together with the create form (system AC-001.3)
+  - 'Given the start page, when a person enters the title "Buy milk", picks 2026-12-24 in the date input
+    (or leaves it empty) and submits, then the site sends `POST /tasks` with `{"title": "Buy milk", "due_date":
+    "2026-12-24"}` (or `"due_date": null`) and, on `201`, without leaving the page shows the task last
+    in the list with that title and due date (or "No due date") and clears the form (system AC-001.4)'
+  - Given the create form, when a person submits an empty or whitespace-only title, or a title longer
+    than 200 characters after trimming, then it shows "Title is required" or "Title must be at most 200
+    characters" next to the title field, keeps the entered values and sends no `POST /tasks` (system AC-001.5)
+  - Given the API answers `POST /tasks` with `422` and a `detail` item whose `loc` ends in `title`, when
+    the answer arrives, then the form shows that item's `msg` next to the title field and keeps the entered
+    values (system AC-001.5)
+  - Given the API answers `POST /tasks` with `409`, when the answer arrives, then the form shows "The
+    task limit of 1000 is reached", keeps the entered values and the list is unchanged (system AC-001.6)
+  - Given taskboard28-api is unreachable, does not answer within 10 seconds, or answers `GET /tasks` with
+    anything but `200` and a JSON array, when a person opens the start page, then it shows "Tasks could
+    not be loaded. Try again later." instead of the list (system AC-001.7)
+  - Given taskboard28-api is unreachable, does not answer within 10 seconds, or answers `POST /tasks`
+    with any status other than `201`, `409` or `422` (such as `503`), when a person submits a valid task,
+    then the form shows "The task could not be saved. Try again." and keeps the entered values (system
+    AC-001.7)
+  arguments: |
+    The site calls the API from the server side only (Server Component / Server Action), base URL from the env var
+    TASKBOARD28_API_URL (set by the gitops entry; no NEXT_PUBLIC_ variable). No sign-in (system A10).
+  depends_on: []
+  done: true
 gitops_pin:
-  - service: taskboard28-api
-    overlay: dev
-    apply_after: taskboard28-api
-    note: the Postgres-backed API image; the database and DATABASE_URL are in place from the gitops entry, applied before merge
-  - service: taskboard28-web
-    overlay: dev
-    apply_after: taskboard28-web
-    note: the task page; it uses the unchanged API contract, so it needs no wait for the API pin
+- service: taskboard28-api
+  overlay: dev
+  apply_after: taskboard28-api
+  note: the Postgres-backed API image; the database and DATABASE_URL are in place from the gitops entry,
+    applied before merge
+- service: taskboard28-web
+  overlay: dev
+  apply_after: taskboard28-web
+  note: the task page; it uses the unchanged API contract, so it needs no wait for the API pin
 ---
 
 ## taskboard28-gitops — Postgres database for taskboard28, used by taskboard28-api; website wired to the API
