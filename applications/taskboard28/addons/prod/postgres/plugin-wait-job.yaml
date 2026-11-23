@@ -1,0 +1,93 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: taskboard28-postgres-plugin-wait
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: taskboard28
+    app.kubernetes.io/managed-by: gitops-app
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: taskboard28-postgres-plugin-wait
+        app.kubernetes.io/part-of: taskboard28
+        app.kubernetes.io/managed-by: gitops-app
+        app.kubernetes.io/component: plugin-wait
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: plugin-wait
+        image: python:3.13.18-alpine3.24@sha256:7984cf56ceaddebe4fefeb75d64000b9f45d8b77b11a09b24524da6cdc3af0c8
+        command:
+        - python3
+        - -c
+        - |
+          # The plugin wait (#864): exits 0 once the Barman Cloud plugin's Service accepts a connection (it has a ready pod), so the
+          # database's WAL archiving through the plugin (the Cluster, in the Sync phase) is applied only then. The plugin is installed by the
+          # operators application, which Argo CD syncs on its own: without the wait the first backup PR set archiving before the plugin ran,
+          # and the cluster restarted into "wal archive plugin is not available". After PLUGIN_WAIT_SECONDS it exits 0 anyway.
+          import os
+          import socket
+          import sys
+          import time
+
+
+          def main():
+              env = os.environ
+              host, port = env["PLUGIN_HOST"], int(env["PLUGIN_PORT"])
+              deadline = time.time() + float(env.get("PLUGIN_WAIT_SECONDS", "600"))
+              last = None
+              while True:
+                  try:
+                      socket.create_connection((host, port), timeout=5).close()
+                      print("backup plugin %s:%d answers" % (host, port), flush=True)
+                      return 0
+                  except OSError as e:
+                      why = type(e).__name__
+                  if why != last:
+                      print("waiting for the backup plugin %s:%d to start: %s" % (host, port, why), flush=True)
+                      last = why
+                  if time.time() >= deadline:
+                      print("backup plugin %s:%d still does not answer (%s); going on without it" % (host, port, why), flush=True)
+                      return 0
+                  time.sleep(float(env.get("PLUGIN_WAIT_INTERVAL", "5")))
+
+
+          if __name__ == "__main__":
+              sys.exit(main())
+        env:
+        - name: PYTHONDONTWRITEBYTECODE
+          value: '1'
+        - name: PLUGIN_HOST
+          value: barman-cloud.cnpg-system.svc
+        - name: PLUGIN_PORT
+          value: '9090'
+        - name: PLUGIN_WAIT_SECONDS
+          value: '600'
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 64Mi
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65534
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
