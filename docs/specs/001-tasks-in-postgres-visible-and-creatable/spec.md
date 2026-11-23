@@ -1,7 +1,7 @@
 ---
 spec_id: 001-tasks-in-postgres-visible-and-creatable
 title: Tasks in Postgres, visible and creatable in the web UI
-status: draft
+status: approved
 priority: P1
 shape: gitops-app
 ---
@@ -68,3 +68,4 @@ As a taskboard28 user, I want to create a task with a title and an optional due 
 
 - 2026-11-23 created
 - 2026-11-23 priority P1 proposed: P1: normal bug or feature
+- 2026-11-23 approved
